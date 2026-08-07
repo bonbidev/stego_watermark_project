@@ -1,0 +1,7 @@
+numpy
+opencv-python
+pywavelets
+pycryptodome
+scikit-image
+matplotlib
+streamlit
