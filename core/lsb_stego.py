@@ -1,105 +1,217 @@
+"""
+LSB image steganography.
+
+Data is embedded into the least significant bits
+of the blue channel.
+"""
+
+from __future__ import annotations
+
 import numpy as np
-import cv2
-import logging
+from PIL import Image
 
-# Cấu hình logging để tiện theo dõi lỗi khi làm nhóm
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-class LSBSteg:
-    """
-    Module LSB Steganography nâng cao:
-    - Hỗ trợ chọn kênh màu để nhúng (R, G, hoặc B).
-    - Tự động kiểm tra giới hạn dung lượng dữ liệu.
-    - Xử lý header 32-bit cho độ dài bản tin.
-    """
-    
-    def __init__(self, channel: int = 0):
+HEADER_SIZE = 32
+CHANNEL_INDEX = 2
+
+
+class LSBStegoError(Exception):
+    """Base exception for LSB steganography."""
+
+
+class CapacityError(LSBStegoError):
+    """Raised when the image cannot store the payload."""
+
+
+class ExtractionError(LSBStegoError):
+    """Raised when hidden data cannot be extracted."""
+
+
+class LSBStego:
+    """LSB steganography using the blue channel."""
+
+    @staticmethod
+    def _bytes_to_bits(data: bytes) -> np.ndarray:
+        """Convert bytes to a binary array."""
+
+        return np.unpackbits(
+            np.frombuffer(data, dtype=np.uint8)
+        )
+
+    @staticmethod
+    def _bits_to_bytes(bits: np.ndarray) -> bytes:
+        """Convert a binary array back to bytes."""
+
+        if len(bits) % 8 != 0:
+            raise ExtractionError(
+                "Bit length must be divisible by 8."
+            )
+
+        return np.packbits(bits).tobytes()
+
+    @staticmethod
+    def _prepare_image(image: Image.Image) -> np.ndarray:
+        """Convert image to RGB NumPy array."""
+
+        if not isinstance(image, Image.Image):
+            raise ValueError("Input must be a PIL Image.")
+
+        return np.array(image.convert("RGB"))
+
+    @staticmethod
+    def _calculate_capacity(image_array: np.ndarray) -> int:
+        """Return maximum payload size in bytes."""
+
+        total_bits = image_array.shape[0] * image_array.shape[1]
+
+        if total_bits <= HEADER_SIZE:
+            return 0
+
+        return (total_bits - HEADER_SIZE) // 8
+
+    def get_capacity(self, image: Image.Image) -> int:
+        """Return the maximum payload size in bytes."""
+
+        image_array = self._prepare_image(image)
+        return self._calculate_capacity(image_array)
+
+    def embed(
+        self,
+        image: Image.Image,
+        data: bytes,
+    ) -> Image.Image:
         """
-        :param channel: Kênh màu sẽ nhúng (0: Blue, 1: Green, 2: Red trong OpenCV)
+        Embed bytes into the blue channel.
+
+        The first 32 bits store the payload length.
         """
-        self.channel = channel
 
-    def _data_to_bits(self, data: bytes) -> np.ndarray:
-        """Chuyển dữ liệu bytes thành mảng bit."""
-        # Thêm 4 bytes đầu lưu độ dài (Metadata)
-        data_len = np.array([len(data)], dtype=np.uint32).view(np.uint8)
-        full_data = np.concatenate([data_len, np.frombuffer(data, dtype=np.uint8)])
-        return np.unpackbits(full_data)
+        if not isinstance(data, bytes):
+            raise ValueError("Data must be bytes.")
 
-    def embed(self, image: np.ndarray, secret_data: bytes) -> np.ndarray:
-        """Nhúng dữ liệu vào ảnh."""
-        if image is None:
-            raise ValueError("Ảnh không hợp lệ.")
-            
-        bits = self._data_to_bits(secret_data)
-        
-        # Kiểm tra dung lượng ảnh (mỗi pixel nhúng 1 bit)
-        max_bits = image.size // 3 # Số pixel * 1 kênh
-        if len(bits) > max_bits:
-            raise ValueError(f"Dữ liệu quá lớn! Tối đa: {max_bits//8} bytes.")
+        image_array = self._prepare_image(image)
 
-        stego_image = image.copy()
-        
-        # Chỉ nhúng vào kênh màu đã chọn
-        # Duyệt qua các pixel và thay đổi bit cuối
-        height, width, _ = stego_image.shape
-        bit_idx = 0
-        
-        for y in range(height):
-            for x in range(width):
-                if bit_idx < len(bits):
-                    # LSB nhúng: Lấy bit cuối của giá trị pixel, xóa nó và đặt bit mới vào
-                    val = int(stego_image[y, x, self.channel])
-                    stego_image[y, x, self.channel] = (val & ~1) | bits[bit_idx]
-                    bit_idx += 1
-                else:
-                    return stego_image
-        
-        logger.info("Nhúng dữ liệu hoàn tất.")
-        return stego_image
+        capacity = self._calculate_capacity(image_array)
 
-    def extract(self, stego_image: np.ndarray) -> bytes:
-        """Trích xuất dữ liệu từ ảnh."""
-        # 1. Lấy 32 bit đầu tiên để đọc độ dài
-        len_bits = np.zeros(32, dtype=np.uint8)
-        
-        height, width, _ = stego_image.shape
-        idx = 0
-        for y in range(height):
-            for x in range(width):
-                if idx < 32:
-                    len_bits[idx] = stego_image[y, x, self.channel] & 1
-                    idx += 1
-                else: break
-        
-        data_len = np.packbits(len_bits).view(np.uint32)[0]
-        
-        # 2. Lấy dữ liệu thực tế dựa trên độ dài
-        data_bits = np.zeros(data_len * 8, dtype=np.uint8)
-        idx = 0
-        for y in range(height):
-            for x in range(width):
-                if idx < (data_len * 8):
-                    # Bắt đầu đọc từ vị trí 32
-                    if (y * width + x) >= 32:
-                        data_bits[idx] = stego_image[y, x, self.channel] & 1
-                        idx += 1
-                else: break
-        
-        return np.packbits(data_bits).tobytes()
+        if len(data) > capacity:
+            raise CapacityError(
+                f"Payload is too large. "
+                f"Maximum capacity: {capacity} bytes."
+            )
 
-# --- DEMO KIỂM CHỨNG ---
+        # Store payload length in the first 32 bits.
+        length_bits = np.unpackbits(
+            np.array([len(data)], dtype=">u4").view(np.uint8)
+        )
+
+        payload_bits = self._bytes_to_bits(data)
+
+        bits = np.concatenate(
+            [length_bits, payload_bits]
+        )
+
+        blue_channel = image_array[:, :, CHANNEL_INDEX].flatten()
+
+        blue_channel[:len(bits)] &= 0xFE
+        blue_channel[:len(bits)] |= bits
+
+        image_array[:, :, CHANNEL_INDEX] = blue_channel.reshape(
+            image_array.shape[:2]
+        )
+
+        return Image.fromarray(image_array)
+
+    def extract(self, image: Image.Image) -> bytes:
+        """Extract hidden bytes from an image."""
+
+        image_array = self._prepare_image(image)
+
+        blue_channel = image_array[:, :, CHANNEL_INDEX].flatten()
+
+        if len(blue_channel) < HEADER_SIZE:
+            raise ExtractionError(
+                "Image is too small."
+            )
+
+        # Read the 32-bit payload length.
+        length_bits = blue_channel[:HEADER_SIZE] & 1
+
+        length_bytes = np.packbits(
+            length_bits
+        ).tobytes()
+
+        payload_length = int.from_bytes(
+            length_bytes,
+            byteorder="big",
+        )
+
+        capacity = self._calculate_capacity(image_array)
+
+        if payload_length > capacity:
+            raise ExtractionError(
+                "Invalid payload length."
+            )
+
+        if payload_length == 0:
+            return b""
+
+        payload_bits_count = payload_length * 8
+
+        start = HEADER_SIZE
+        end = start + payload_bits_count
+
+        if end > len(blue_channel):
+            raise ExtractionError(
+                "Incomplete payload."
+            )
+
+        payload_bits = blue_channel[start:end] & 1
+
+        return self._bits_to_bytes(payload_bits)
+
+
+def embed_data(
+    image: Image.Image,
+    data: bytes,
+) -> Image.Image:
+    """Convenience function for embedding data."""
+
+    return LSBStego().embed(image, data)
+
+
+def extract_data(
+    image: Image.Image,
+) -> bytes:
+    """Convenience function for extracting data."""
+
+    return LSBStego().extract(image)
+
+
 if __name__ == "__main__":
-    # Test với một ảnh thật
-    img = np.zeros((512, 512, 3), dtype=np.uint8) # Ảnh đen 512x512
-    data = b"Bao mat thong tin - Nhom 16"
-    
-    lsb = LSBSteg(channel=0) # Nhúng vào kênh Blue
-    try:
-        encoded = lsb.embed(img, data)
-        decoded = lsb.extract(encoded)
-        print(f"Dữ liệu trích xuất: {decoded.decode('utf-8')}")
-        assert data == decoded
-    except Exception as e:
-        print(f"Lỗi: {e}")
+    image = Image.open("input.png")
+
+    secret = b"Hello LSB Steganography!"
+
+    stego = LSBStego()
+
+    print(
+        f"Capacity: {stego.get_capacity(image)} bytes"
+    )
+
+    encoded_image = stego.embed(
+        image,
+        secret,
+    )
+
+    encoded_image.save("output.png")
+
+    decoded = stego.extract(
+        Image.open("output.png")
+    )
+
+    print("Original :", secret)
+    print("Extracted:", decoded)
+
+    assert decoded == secret
+
+    print("LSB test passed.")

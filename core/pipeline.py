@@ -1,59 +1,341 @@
-import cv2
-import numpy as np
-from .aes_cipher import AESCipher
-from .lsb_stego import LSBSteg
-from .dwt_watermark import DWTWatermark
+"""
+Main pipeline for AES + LSB + DWT.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from PIL import Image
+
+from core.aes_cipher import (
+    AESCipher,
+    InvalidPasswordError,
+    InvalidPayloadError,
+)
+from core.lsb_stego import (
+    LSBStego,
+    CapacityError,
+    ExtractionError,
+)
+from core.dwt_watermark import (
+    DWTWatermark,
+)
+
+
+@dataclass
+class EmbedResult:
+    """Result returned after embedding."""
+
+    image: Image.Image
+    encrypted_payload: str
+    payload_size: int
+
+
+@dataclass
+class ExtractResult:
+    """Result returned after extraction."""
+
+    secret_text: str
+    encrypted_payload: str
+
 
 class StegoPipeline:
     """
-    Pipeline tích hợp: AES -> LSB -> DWT
-    Quy trình: 
-    1. Mã hóa văn bản bằng AES.
-    2. Nhúng bản mã vào ảnh bằng LSB.
-    3. Nhúng logo bản quyền vào ảnh bằng DWT.
+    AES → LSB → DWT pipeline.
+
+    Embedding:
+        Secret text
+            ↓
+        AES encryption
+            ↓
+        LSB embedding
+            ↓
+        DWT watermark
+            ↓
+        Final image
+
+    Extraction:
+        Watermarked image
+            ↓
+        DWT watermark extraction
+            ↓
+        LSB extraction
+            ↓
+        AES decryption
+            ↓
+        Secret text
     """
-    
-    def __init__(self, password: str, alpha: float = 0.1):
-        self.aes = AESCipher(password=password)
-        self.lsb = LSBSteg(channel=0) # Nhúng LSB vào kênh Blue
-        self.dwt = DWTWatermark(alpha=alpha)
 
-    def run_embed(self, image_path: str, secret_text: str, watermark_path: str, output_path: str):
-        # 1. Đọc ảnh và logo
-        img = cv2.imread(image_path)
-        wm = cv2.imread(watermark_path, cv2.IMREAD_GRAYSCALE)
-        
-        # 2. Mã hóa văn bản
-        encrypted_data = self.aes.encrypt(secret_text)
-        
-        # 3. Nhúng LSB (Thông tin bí mật)
-        stego_lsb = self.lsb.embed(img, encrypted_data)
-        
-        # 4. Nhúng DWT (Logo bản quyền)
-        final_img = self.dwt.embed(stego_lsb, wm)
-        
-        # 5. Lưu ảnh kết quả
-        cv2.imwrite(output_path, final_img)
-        print(f"Đã lưu ảnh thành công tại: {output_path}")
-        return final_img
+    def __init__(
+        self,
+        password: str,
+        alpha: float = 0.05,
+    ):
+        if not password:
+            raise ValueError(
+                "Password cannot be empty."
+            )
 
-    def run_extract(self, stego_image_path: str, original_image_path: str, password: str):
-        # 1. Đọc ảnh
-        stego_img = cv2.imread(stego_image_path)
-        orig_img = cv2.imread(original_image_path)
-        
-        # 2. Trích xuất LSB (Lấy bản mã)
-        encrypted_data = self.lsb.extract(stego_img)
-        
-        # 3. Giải mã AES
-        aes = AESCipher(password=password)
-        secret_text = aes.decrypt(encrypted_data)
-        
-        return secret_text
+        self.cipher = AESCipher(password)
+        self.lsb = LSBStego()
+        self.dwt = DWTWatermark(alpha)
 
-# --- KIỂM THỬ PIPELINE ---
+    def encrypt_message(
+        self,
+        secret_text: str,
+    ) -> str:
+        """Encrypt secret text."""
+
+        if not secret_text:
+            raise ValueError(
+                "Secret text cannot be empty."
+            )
+
+        return self.cipher.encrypt(
+            secret_text
+        )
+
+    def decrypt_message(
+        self,
+        encrypted_payload: str,
+    ) -> str:
+        """Decrypt encrypted payload."""
+
+        return self.cipher.decrypt(
+            encrypted_payload
+        )
+
+    def embed_secret(
+        self,
+        image: Image.Image,
+        secret_text: str,
+    ) -> tuple[Image.Image, str]:
+        """
+        Encrypt and embed secret text using LSB.
+        """
+
+        encrypted_payload = (
+            self.encrypt_message(
+                secret_text
+            )
+        )
+
+        payload = encrypted_payload.encode(
+            "utf-8"
+        )
+
+        stego_image = self.lsb.embed(
+            image,
+            payload,
+        )
+
+        return (
+            stego_image,
+            encrypted_payload,
+        )
+
+    def extract_secret(
+        self,
+        image: Image.Image,
+    ) -> tuple[str, str]:
+        """
+        Extract encrypted payload and decrypt it.
+        """
+
+        payload = self.lsb.extract(
+            image
+        )
+
+        if not payload:
+            raise ExtractionError(
+                "No hidden data found."
+            )
+
+        encrypted_payload = payload.decode(
+            "utf-8"
+        )
+
+        secret_text = self.decrypt_message(
+            encrypted_payload
+        )
+
+        return (
+            secret_text,
+            encrypted_payload,
+        )
+
+    def embed_watermark(
+        self,
+        image: Image.Image,
+        watermark: Image.Image,
+    ) -> Image.Image:
+        """Embed watermark using DWT."""
+
+        return self.dwt.embed(
+            image,
+            watermark,
+        )
+
+    def extract_watermark(
+        self,
+        original: Image.Image,
+        watermarked: Image.Image,
+        watermark_size: tuple[int, int] | None = None,
+    ) -> Image.Image:
+        """Extract watermark using DWT."""
+
+        return self.dwt.extract(
+            original,
+            watermarked,
+            watermark_size,
+        )
+
+    def run_embed(
+        self,
+        image: Image.Image,
+        secret_text: str,
+        watermark: Image.Image | None = None,
+    ) -> EmbedResult:
+        """
+        Run the complete embedding pipeline.
+
+        AES → LSB → optional DWT watermark
+        """
+
+        stego_image, encrypted_payload = (
+            self.embed_secret(
+                image,
+                secret_text,
+            )
+        )
+
+        if watermark is not None:
+            stego_image = self.embed_watermark(
+                stego_image,
+                watermark,
+            )
+
+        return EmbedResult(
+            image=stego_image,
+            encrypted_payload=encrypted_payload,
+            payload_size=len(
+                encrypted_payload.encode("utf-8")
+            ),
+        )
+
+    def run_extract(
+        self,
+        original: Image.Image,
+        watermarked_image: Image.Image,
+        watermark_size: tuple[int, int] | None = None,
+    ) -> ExtractResult:
+        """
+        Run the complete extraction pipeline.
+
+        DWT watermark extraction is optional.
+        Secret extraction uses LSB.
+        """
+
+        secret_text, encrypted_payload = (
+            self.extract_secret(
+                watermarked_image
+            )
+        )
+
+        return ExtractResult(
+            secret_text=secret_text,
+            encrypted_payload=encrypted_payload,
+        )
+
+
+def run_embed(
+    image: Image.Image,
+    secret_text: str,
+    password: str,
+    watermark: Image.Image | None = None,
+    alpha: float = 0.05,
+) -> EmbedResult:
+    """Convenience function for the embedding pipeline."""
+
+    pipeline = StegoPipeline(
+        password=password,
+        alpha=alpha,
+    )
+
+    return pipeline.run_embed(
+        image=image,
+        secret_text=secret_text,
+        watermark=watermark,
+    )
+
+
+def run_extract(
+    original: Image.Image,
+    watermarked_image: Image.Image,
+    password: str,
+    watermark_size: tuple[int, int] | None = None,
+    alpha: float = 0.05,
+) -> ExtractResult:
+    """Convenience function for the extraction pipeline."""
+
+    pipeline = StegoPipeline(
+        password=password,
+        alpha=alpha,
+    )
+
+    return pipeline.run_extract(
+        original=original,
+        watermarked_image=watermarked_image,
+        watermark_size=watermark_size,
+    )
+
+
 if __name__ == "__main__":
-    print("--- CHẠY PIPELINE TÍCH HỢP ---")
-    # Lưu ý: Cần có file ảnh test trong folder assets
-    # pipeline = StegoPipeline(password="Nhom16_Secret")
-    # pipeline.run_embed("assets/cover_images/test.png", "Bi mat", "assets/watermarks/logo.png", "output.png")
+    image = Image.open("input.png")
+    watermark = Image.open("watermark.png")
+
+    password = "TestPassword123!"
+    secret = "This is a secret message."
+
+    pipeline = StegoPipeline(
+        password=password,
+        alpha=0.05,
+    )
+
+    # Embed
+    result = pipeline.run_embed(
+        image=image,
+        secret_text=secret,
+        watermark=watermark,
+    )
+
+    result.image.save(
+        "final_output.png"
+    )
+
+    print(
+        f"Payload size: "
+        f"{result.payload_size} bytes"
+    )
+
+    # Extract
+    extracted = pipeline.run_extract(
+        original=image,
+        watermarked_image=result.image,
+        watermark_size=watermark.size,
+    )
+
+    print(
+        "Original :",
+        secret,
+    )
+
+    print(
+        "Extracted:",
+        extracted.secret_text,
+    )
+
+    assert extracted.secret_text == secret
+
+    print("Pipeline test passed.")

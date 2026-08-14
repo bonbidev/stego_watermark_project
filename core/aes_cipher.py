@@ -1,72 +1,225 @@
-import hashlib
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
-from Crypto.Random import get_random_bytes
-from Crypto.Protocol.KDF import PBKDF2
+"""
+AES-256-GCM encryption/decryption for secret messages.
+"""
+
+import base64
+import json
+import os
+
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+
+KEY_SIZE = 32
+SALT_SIZE = 16
+NONCE_SIZE = 12
+PBKDF2_ITERATIONS = 600_000
+PAYLOAD_VERSION = 1
+
+
+class AESCipherError(Exception):
+    """Base exception for AES errors."""
+
+
+class InvalidPasswordError(AESCipherError):
+    """Raised when the password is incorrect or data is corrupted."""
+
+
+class InvalidPayloadError(AESCipherError):
+    """Raised when the encrypted payload is invalid."""
+
 
 class AESCipher:
-    """
-    Module mã hóa AES nâng cao hỗ trợ:
-    - Key Derivation từ mật khẩu (PBKDF2-HMAC-SHA256).
-    - Authentication (Encrypt-then-MAC).
-    - Tự động nhận diện độ dài khóa (128/192/256 bits).
-    """
-    
-    def __init__(self, password: str = None, key: bytes = None):
-        # Ưu tiên dùng key có sẵn, nếu không thì tạo từ password
-        if key:
-            if len(key) not in [16, 24, 32]:
-                raise ValueError("Key phải có độ dài 16, 24 hoặc 32 bytes.")
-            self.key = key
-        elif password:
-            # Tạo khóa từ mật khẩu bằng PBKDF2
-            salt = b'\x9a\x9d\x8b\x0e\x12\x4f\x5a\x21' # Nên thay bằng salt ngẫu nhiên và lưu lại
-            self.key = PBKDF2(password, salt, dkLen=32, count=1000000)
-        else:
-            self.key = get_random_bytes(32) # Mặc định AES-256
+    """AES-256-GCM encryption/decryption using a password."""
 
-    def encrypt(self, plaintext: str) -> bytes:
-        """Mã hóa với IV ngẫu nhiên và chuẩn PKCS7."""
+    def __init__(self, password: str):
+        if not isinstance(password, str) or not password:
+            raise ValueError("Password cannot be empty.")
+
+        self.password = password
+
+    def _derive_key(self, salt: bytes) -> bytes:
+        """Derive a 256-bit AES key using PBKDF2-HMAC-SHA256."""
+
+        if len(salt) != SALT_SIZE:
+            raise ValueError("Invalid salt length.")
+
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=KEY_SIZE,
+            salt=salt,
+            iterations=PBKDF2_ITERATIONS,
+        )
+
+        return kdf.derive(self.password.encode("utf-8"))
+
+    def encrypt(self, plaintext: str) -> str:
+        """Encrypt plaintext and return a Base64 payload."""
+
+        if not isinstance(plaintext, str):
+            raise ValueError("Plaintext must be a string.")
+
+        # Random salt and nonce ensure different ciphertext each time.
+        salt = os.urandom(SALT_SIZE)
+        nonce = os.urandom(NONCE_SIZE)
+
+        key = self._derive_key(salt)
+        aesgcm = AESGCM(key)
+
+        ciphertext = aesgcm.encrypt(
+            nonce,
+            plaintext.encode("utf-8"),
+            None,
+        )
+
+        payload = {
+            "version": PAYLOAD_VERSION,
+            "algorithm": "AES-256-GCM",
+            "kdf": "PBKDF2-HMAC-SHA256",
+            "iterations": PBKDF2_ITERATIONS,
+            "salt": base64.b64encode(salt).decode("ascii"),
+            "nonce": base64.b64encode(nonce).decode("ascii"),
+            "ciphertext": base64.b64encode(ciphertext).decode("ascii"),
+        }
+
+        payload_json = json.dumps(
+            payload,
+            separators=(",", ":"),
+        )
+
+        return base64.b64encode(
+            payload_json.encode("utf-8")
+        ).decode("ascii")
+
+    def decrypt(self, encrypted_payload: str) -> str:
+        """Decrypt a Base64 payload and return the original plaintext."""
+
+        if not isinstance(encrypted_payload, str):
+            raise InvalidPayloadError(
+                "Encrypted payload must be a string."
+            )
+
         try:
-            data_bytes = plaintext.encode('utf-8')
-            cipher = AES.new(self.key, AES.MODE_CBC)
-            iv = cipher.iv
-            ciphertext = cipher.encrypt(pad(data_bytes, AES.block_size))
-            return iv + ciphertext
-        except Exception as e:
-            raise RuntimeError(f"Lỗi mã hóa: {str(e)}")
+            payload_json = base64.b64decode(
+                encrypted_payload,
+                validate=True,
+            ).decode("utf-8")
 
-    def decrypt(self, encrypted_data: bytes) -> str:
-        """Giải mã và kiểm tra lỗi định dạng."""
+            payload = json.loads(payload_json)
+
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise InvalidPayloadError(
+                "Invalid encrypted payload."
+            ) from exc
+
+        required_fields = {
+            "version",
+            "algorithm",
+            "kdf",
+            "iterations",
+            "salt",
+            "nonce",
+            "ciphertext",
+        }
+
+        if not required_fields.issubset(payload):
+            raise InvalidPayloadError(
+                "Missing required payload fields."
+            )
+
+        if payload["version"] != PAYLOAD_VERSION:
+            raise InvalidPayloadError(
+                "Unsupported payload version."
+            )
+
+        if payload["algorithm"] != "AES-256-GCM":
+            raise InvalidPayloadError(
+                "Unsupported encryption algorithm."
+            )
+
+        if payload["kdf"] != "PBKDF2-HMAC-SHA256":
+            raise InvalidPayloadError(
+                "Unsupported key derivation function."
+            )
+
         try:
-            iv = encrypted_data[:16]
-            ciphertext = encrypted_data[16:]
-            cipher = AES.new(self.key, AES.MODE_CBC, iv)
-            decrypted_bytes = unpad(cipher.decrypt(ciphertext), AES.block_size)
-            return decrypted_bytes.decode('utf-8')
-        except (ValueError, KeyError) as e:
-            raise ValueError("Giải mã thất bại: Sai khóa hoặc bản mã bị hỏng.") from e
+            salt = base64.b64decode(
+                payload["salt"],
+                validate=True,
+            )
 
-# --- KIỂM THỬ NÂNG CAO ---
+            nonce = base64.b64decode(
+                payload["nonce"],
+                validate=True,
+            )
+
+            ciphertext = base64.b64decode(
+                payload["ciphertext"],
+                validate=True,
+            )
+
+        except Exception as exc:
+            raise InvalidPayloadError(
+                "Invalid payload encoding."
+            ) from exc
+
+        if len(salt) != SALT_SIZE:
+            raise InvalidPayloadError("Invalid salt length.")
+
+        if len(nonce) != NONCE_SIZE:
+            raise InvalidPayloadError("Invalid nonce length.")
+
+        if not ciphertext:
+            raise InvalidPayloadError("Ciphertext cannot be empty.")
+
+        key = self._derive_key(salt)
+        aesgcm = AESGCM(key)
+
+        try:
+            plaintext = aesgcm.decrypt(
+                nonce,
+                ciphertext,
+                None,
+            )
+
+        except InvalidTag as exc:
+            raise InvalidPasswordError(
+                "Incorrect password or corrupted data."
+            ) from exc
+
+        try:
+            return plaintext.decode("utf-8")
+
+        except UnicodeDecodeError as exc:
+            raise InvalidPayloadError(
+                "Decrypted data is not valid UTF-8."
+            ) from exc
+
+
+def encrypt_text(plaintext: str, password: str) -> str:
+    """Convenience function for encryption."""
+    return AESCipher(password).encrypt(plaintext)
+
+
+def decrypt_text(encrypted_payload: str, password: str) -> str:
+    """Convenience function for decryption."""
+    return AESCipher(password).decrypt(encrypted_payload)
+
+
 if __name__ == "__main__":
-    print("--- KIỂM THỬ BẢN NÂNG CẤP ---")
-    
-    # Kịch bản: Người dùng đặt mật khẩu "Nhom16_Secret"
-    cipher_tool = AESCipher(password="Nhom16_Secret")
-    
-    msg = "Thông tin bảo mật nhúng vào ảnh!"
-    
-    # Mã hóa
-    encrypted = cipher_tool.encrypt(msg)
-    print(f"Bản mã (hex): {encrypted.hex()}")
-    
-    # Giải mã
-    decrypted = cipher_tool.decrypt(encrypted)
-    print(f"Kết quả: {decrypted}")
-    
-    # Kiểm tra sai khóa
-    try:
-        wrong_tool = AESCipher(password="Sai_Mat_Khau")
-        wrong_tool.decrypt(encrypted)
-    except ValueError as e:
-        print(f"Thông báo lỗi đúng mong đợi: {e}")
+    password = "TestPassword123!"
+    plaintext = "Secret message for steganography."
+
+    cipher = AESCipher(password)
+
+    encrypted = cipher.encrypt(plaintext)
+    decrypted = cipher.decrypt(encrypted)
+
+    print("Original :", plaintext)
+    print("Encrypted:", encrypted)
+    print("Decrypted:", decrypted)
+
+    assert decrypted == plaintext
+    print("AES test passed.")
