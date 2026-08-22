@@ -189,11 +189,11 @@ class DWTWatermark:
             watermarked
         )
 
-        _, (_, original_LH, _,) = self._dwt(
+        _, (original_LH, _, _,) = self._dwt(
             original_array
         )
 
-        _, (_, watermarked_LH, _,) = self._dwt(
+        _, (watermarked_LH, _, _,) = self._dwt(
             watermarked_array
         )
 
