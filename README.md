@@ -1,59 +1,69 @@
-# 🔐 Hệ thống Giấu tin & Thủy vân số (Stego & Watermark)
+# Hệ thống Giấu tin & Thủy vân số
 
-Ứng dụng minh họa và thực nghiệm các kỹ thuật **giấu tin mật (steganography)** và **thủy vân số (digital watermarking)** trên ảnh, kết hợp mã hóa **AES**, đánh giá chất lượng ảnh và kiểm tra độ bền trước các phép tấn công phổ biến.
+Ứng dụng thực nghiệm các kỹ thuật **giấu tin mật (steganography)** và **thủy vân số (digital watermarking)** trên ảnh, kết hợp mã hóa **AES-256-GCM**, đánh giá chất lượng ảnh (PSNR/SSIM/NC), kiểm tra độ bền trước 9 kiểu tấn công phổ biến, và so sánh trực tiếp các thuật toán trên cùng dữ liệu đầu vào.
 
-Xây dựng bằng Python + [Streamlit](https://streamlit.io/), giao diện web tương tác, không cần biết lập trình vẫn có thể sử dụng.
+Xây dựng bằng Python + [Streamlit](https://streamlit.io/) — giao diện web tương tác, có biểu đồ Plotly, chế độ tối, xuất báo cáo Excel.
+
+**Sinh viên:** Tuấn Kiệt, Thanh Ngôn — Đại học Tôn Đức Thắng, Khoa CNTT
 
 ---
 
-## ✨ Tính năng chính
+## Tính năng chính
 
 | Nhóm | Thuật toán / Chức năng |
 |---|---|
-| **Giấu tin (Steganography)** | LSB (Least Significant Bit), PVD (Pixel Value Differencing), DCT (Discrete Cosine Transform) |
-| **Mã hóa** | AES (mật khẩu do người dùng cung cấp, qua `pycryptodome`) |
+| **Giấu tin (Steganography)** | LSB, PVD (Pixel Value Differencing), DCT (Discrete Cosine Transform) — cả 3 đều **giữ nguyên màu ảnh gốc** (chỉ ghi vào kênh Blue) |
+| **Mã hóa** | AES-256-GCM (mã hóa có xác thực) với khóa dẫn xuất bằng PBKDF2-HMAC-SHA256, 600.000 vòng lặp |
 | **Thủy vân số (Watermarking)** | DWT (Discrete Wavelet Transform), DWT-SVD (kết hợp Singular Value Decomposition) |
-| **Đánh giá chất lượng ảnh** | MSE, PSNR, SSIM (giữa ảnh gốc và ảnh đã xử lý), NC (Normalized Correlation cho watermark trích xuất) |
-| **Kiểm tra độ bền (Robustness)** | JPEG compression, Gaussian noise, Salt & Pepper noise, Gaussian blur, Median blur, Resize, Crop, Rotate, Sharpen |
-| **Steganalysis** | Phân tích LSB Ratio, LSB Entropy để phát hiện dấu hiệu giấu tin |
+| **Đánh giá chất lượng ảnh** | MSE, PSNR, SSIM, NC (Normalized Correlation cho watermark trích xuất) |
+| **Kiểm tra độ bền (Robustness)** | JPEG, Gaussian noise, Salt & Pepper, Gaussian blur, Median blur, Resize, Crop, Rotate, Sharpen (9 kiểu) |
+| **So sánh thuật toán** | Chạy đồng thời nhiều ảnh, ma trận độ bền đầy đủ (thuật toán × tấn công), biểu đồ radar đa tiêu chí, xuất Excel |
+| **Steganalysis** | LSB ratio/entropy, Chi-square test, histogram phân bố pixel/bit |
+| **Giao diện** | Chế độ tối, thanh trượt so sánh ảnh trước/sau, nhận xét chi tiết tự động, hướng dẫn thao tác tích hợp từng tab |
 
 ---
 
-## 🖥️ Demo giao diện (Streamlit)
+## Giao diện — 7 tab
 
-Ứng dụng gồm 5 tab chính:
-
-1. **🔐 Giấu tin** — mã hóa nội dung bí mật bằng AES rồi nhúng vào ảnh bằng LSB / PVD / DCT
-2. **🔓 Trích xuất** — trích xuất và giải mã nội dung từ ảnh đã giấu tin
-3. **©️ Thủy vân** — nhúng watermark (ảnh logo) vào ảnh gốc bằng DWT hoặc DWT-SVD, xem chỉ số PSNR/SSIM/NC
-4. **🧪 Robustness** — mô phỏng các phép tấn công lên ảnh để kiểm tra độ bền
-5. **🔍 Steganalysis** — phân tích một ảnh để phát hiện khả năng có chứa tin giấu
+1. **Giấu tin** — mã hóa nội dung bằng AES rồi nhúng vào ảnh bằng LSB / PVD / DCT
+2. **Trích xuất** — trích xuất và giải mã nội dung từ ảnh đã giấu tin
+3. **Thủy vân** — nhúng watermark (ảnh logo) bằng DWT hoặc DWT-SVD, xem PSNR/SSIM/NC
+4. **So sánh** — chạy tất cả thuật toán trên cùng ảnh đầu vào (nhiều ảnh cùng lúc), so sánh chất lượng/tốc độ/độ bền, xuất Excel
+5. **Robustness** — mô phỏng 1 trong 9 kiểu tấn công lên ảnh để xem mức độ biến dạng
+6. **Steganalysis** — phân tích một ảnh để tìm dấu hiệu có chứa tin giấu
+7. **Hướng dẫn** — FAQ và giải thích từng tab ngay trong app
 
 ---
 
-## 📁 Cấu trúc thư mục
+## Cấu trúc thư mục
 
 ```
 stego_watermark_project/
 ├── core/
-│   ├── aes_cipher.py          # Mã hóa/giải mã AES
-│   ├── lsb_stego.py           # Giấu tin bằng LSB
-│   ├── pvd_stego.py           # Giấu tin bằng PVD
-│   ├── dct_stego.py           # Giấu tin bằng DCT
-│   ├── dwt_watermark.py       # Thủy vân số bằng DWT
-│   └── dwt_svd_watermark.py   # Thủy vân số bằng DWT-SVD
+│   ├── aes_cipher.py           # AES-256-GCM + PBKDF2-HMAC-SHA256
+│   ├── lsb_stego.py            # Giấu tin LSB (kênh Blue)
+│   ├── pvd_stego.py            # Giấu tin PVD (giữ màu ảnh)
+│   ├── dct_stego.py            # Giấu tin DCT — 1 bit/khối 8x8 (giữ màu ảnh)
+│   ├── dwt_watermark.py        # Thủy vân DWT
+│   ├── dwt_svd_watermark.py    # Thủy vân DWT-SVD
+│   └── pipeline.py             # Pipeline AES→LSB→DWT gộp (không dùng bởi app.py — xem Hạn chế)
 ├── evaluation/
-│   ├── metrics.py             # Tính MSE, PSNR, SSIM, NC
-│   ├── attacks.py             # Mô phỏng các phép tấn công
-│   └── steganalysis.py        # Phân tích phát hiện giấu tin
-├── app.py                     # Giao diện Streamlit chính
+│   ├── metrics.py              # MSE, PSNR, SSIM, NC
+│   ├── attacks.py              # 9 kiểu tấn công mô phỏng
+│   ├── steganalysis.py         # LSB ratio/entropy, Chi-square test
+│   └── benchmark.py            # Chạy & so sánh hàng loạt thuật toán
+├── app.py                      # Giao diện Streamlit (7 tab)
+├── config.py                   # Cấu hình tập trung (mật khẩu, alpha, tham số tấn công...)
+├── example_usage.py            # 8 ví dụ chạy trực tiếp bằng Python (không cần UI)
 ├── requirements.txt
+├── cleanup_repo.sh             # Script gỡ .venv/ khỏi git tracking
+├── .gitignore
 └── README.md
 ```
 
 ---
 
-## ⚙️ Cài đặt
+## Cài đặt
 
 ### Yêu cầu
 - Python 3.9+
@@ -62,114 +72,111 @@ stego_watermark_project/
 ### Các bước
 
 ```bash
-# 1. Clone repository
 git clone https://github.com/bonbidev/stego_watermark_project.git
 cd stego_watermark_project
 
-# 2. Tạo virtual environment (khuyến nghị)
 python -m venv .venv
 source .venv/bin/activate      # Linux/macOS
 .venv\Scripts\activate         # Windows
 
-# 3. Cài đặt thư viện
 pip install -r requirements.txt
 ```
 
 ### Thư viện sử dụng
 
 ```
-numpy
-opencv-python
-pywavelets
-pycryptodome
-scikit-image
-matplotlib
-streamlit
+numpy            opencv-python      pywavelets
+cryptography     scipy              pandas
+scikit-image     streamlit          plotly
+openpyxl
 ```
+
+> `requirements.txt` đã được rà soát khớp đúng với import thật trong code (không còn gói thừa `pycryptodome`/`matplotlib`, không còn thiếu `cryptography`/`scipy`/`pandas` như bản cũ).
 
 ---
 
-## 🚀 Chạy ứng dụng
+## Chạy ứng dụng
 
 ```bash
 streamlit run app.py
 ```
 
-Sau khi chạy, trình duyệt sẽ tự mở tại `http://localhost:8501`.
+Trình duyệt tự mở tại `http://localhost:8501`.
+
+Kiểm tra nhanh không cần mở giao diện web:
+
+```bash
+python example_usage.py
+```
+
+Nếu thấy dòng cuối **`ALL EXAMPLES COMPLETED SUCCESSFULLY`** là môi trường đã cài đặt đúng.
 
 ---
 
-## 📖 Hướng dẫn sử dụng nhanh
+## Hướng dẫn sử dụng nhanh
 
 ### Giấu tin mật vào ảnh
-1. Vào tab **🔐 Giấu tin**
-2. Tải lên ảnh gốc (PNG/JPG/JPEG/BMP)
-3. Chọn thuật toán (LSB / PVD / DCT)
-4. Nhập nội dung bí mật và mật khẩu AES
-5. Nhấn **Giấu tin** → xem kết quả, chỉ số chất lượng (MSE/PSNR/SSIM) và tải ảnh về
+1. Tab **Giấu tin** → upload ảnh gốc (PNG khuyến nghị)
+2. Chọn thuật toán (LSB / PVD / DCT) — xem thông tin tốc độ/sức chứa/độ bền ngay bên cạnh
+3. Nhập nội dung bí mật và mật khẩu AES (nên ≥ 12 ký tự)
+4. Nhấn **Giấu tin** → xem kết quả, nhận xét chi tiết, bản đồ sai khác, tải ảnh PNG về
 
 ### Trích xuất tin đã giấu
-1. Vào tab **🔓 Trích xuất**
-2. Tải lên ảnh đã giấu tin, chọn đúng thuật toán và nhập đúng mật khẩu đã dùng khi giấu tin
-3. Nhấn **Trích xuất** để xem nội dung gốc
+1. Tab **Trích xuất** → upload đúng ảnh đã giấu tin, chọn đúng thuật toán, nhập đúng mật khẩu
+2. Nhấn **Trích xuất** để xem lại nội dung gốc
 
 ### Nhúng thủy vân số
-1. Vào tab **©️ Thủy vân**
-2. Tải ảnh gốc và ảnh watermark (logo)
-3. Chọn thuật toán (DWT / DWT-SVD) và hệ số **Alpha** (cường độ nhúng, 0.01–0.20)
-4. Nhấn **Nhúng watermark** → xem ảnh kết quả, watermark trích xuất lại và chỉ số NC
+1. Tab **Thủy vân** → upload ảnh gốc + ảnh watermark (logo nhỏ)
+2. Chọn thuật toán (DWT / DWT-SVD) và **Alpha** (0.01–0.20, càng lớn càng bền nhưng ảnh càng biến dạng)
+3. Nhấn **Nhúng watermark** → xem watermark trích xuất lại và chỉ số NC
 
-### Kiểm tra độ bền / Steganalysis
-- Tab **🧪 Robustness**: chọn ảnh và loại tấn công (nén JPEG, nhiễu, làm mờ, resize, crop, xoay, làm nét...) để mô phỏng
-- Tab **🔍 Steganalysis**: tải ảnh để phân tích chỉ số LSB Ratio và LSB Entropy, đánh giá khả năng chứa dữ liệu ẩn
+### So sánh & kiểm tra độ bền
+- Tab **So sánh**: upload nhiều ảnh cùng lúc, chọn mức kiểm tra độ bền (Nhanh/Đầy đủ), xem bảng + biểu đồ radar + xuất Excel
+- Tab **Robustness**: mô phỏng 1 kiểu tấn công cụ thể để xem mức biến dạng chi tiết
+- Tab **Steganalysis**: phân tích 1 ảnh bất kỳ để tìm dấu hiệu bất thường trong mặt phẳng LSB
 
 ---
 
-## 🧮 Cơ sở lý thuyết (tóm tắt)
+## Cơ sở lý thuyết (tóm tắt)
 
-- **LSB**: thay đổi bit có trọng số thấp nhất của từng pixel — đơn giản, sức chứa lớn, nhưng dễ bị phát hiện/phá hủy khi nén ảnh
-- **PVD**: dựa trên độ chênh lệch giá trị giữa các cặp pixel liền kề để quyết định số bit giấu — cân bằng giữa sức chứa và khả năng ẩn giấu
-- **DCT**: biến đổi ảnh sang miền tần số (giống nguyên lý nén JPEG) rồi giấu tin vào các hệ số — bền hơn trước nén ảnh
-- **DWT**: biến đổi wavelet rời rạc, nhúng watermark vào các hệ số tần số thấp/cao để tăng độ bền trước các phép biến đổi hình học và nhiễu
-- **DWT-SVD**: kết hợp DWT với phân tích giá trị kỳ dị (SVD) — thường cho độ bền cao hơn DWT thuần
+| Thuật toán | Nguyên lý | Sức chứa | Độ bền thực đo |
+|---|---|---|---|
+| **LSB** | Ghi vào bit thấp nhất kênh Blue | Rất lớn (~1 bit/byte ảnh) | Rất thấp — vỡ ngay cả khi nén nhẹ |
+| **PVD** | Số bit nhúng theo độ tương phản cục bộ (cạnh nhúng nhiều hơn vùng phẳng) | Lớn | Thấp — tương tự LSB |
+| **DCT** | Biến đổi từng khối 8×8 sang miền tần số, mã hoá 1 bit/khối bằng 2 hệ số | Thấp (1 bit/khối) | Thấp hơn kỳ vọng lý thuyết — xem mục Hạn chế |
+| **DWT** | Nhúng vào hệ số subband LH của biến đổi wavelet | Trung bình | **Có bền thực đo**: NC ≈ 0.83 ở JPEG q95, ≈ 0.65 ở q75 |
+| **DWT-SVD** | DWT + phân tích giá trị kỳ dị (SVD) | Trung bình | Thấp trong bản cài đặt hiện tại — xem Hạn chế |
 
 ### Chỉ số đánh giá
-- **MSE / PSNR**: đo mức độ sai khác giữa ảnh gốc và ảnh sau xử lý (PSNR càng cao → ảnh càng ít bị biến dạng)
-- **SSIM**: đo độ tương đồng cấu trúc, gần với cảm nhận thị giác con người hơn PSNR
-- **NC (Normalized Correlation)**: đo mức độ giống nhau giữa watermark gốc và watermark trích xuất được (giá trị càng gần 1 càng tốt)
+- **PSNR** (dB): sai khác giữa ảnh gốc và ảnh sau xử lý — ≥ 40 dB thường coi là mắt thường khó phân biệt
+- **SSIM** (0–1): độ tương đồng cấu trúc, gần cảm nhận thị giác hơn PSNR
+- **NC** (0–1): độ giống giữa watermark gốc và watermark trích xuất — ≥ 0.9 là rất tốt
 
 ---
 
-## 🗺️ Lộ trình phát triển (Roadmap)
+## Hạn chế đã biết (dựa trên thực nghiệm, không phải suy đoán)
 
-Dự án đang triển khai theo các hạng mục sau (xem chi tiết tại tab **Issues** của repo):
+Các mục dưới đây đã được đo đạc trực tiếp trong quá trình phát triển, không phải nhận định chủ quan:
 
-- [x] Cài đặt module mã hóa AES
-- [x] Cài đặt module giấu tin LSB
-- [x] Cài đặt module thủy vân DWT
-- [x] Cài đặt module tính chỉ số đánh giá
-- [x] Xây dựng pipeline thống nhất và giao diện demo (Streamlit)
-- [x] Xây dựng module mô phỏng tấn công
-- [ ] Thu thập bộ dataset chuẩn (ảnh vỏ + watermark logo)
-- [ ] Hoàn thiện tài liệu toán học cho LSB, DWT và các công thức đánh giá
-- [ ] Thiết kế sơ đồ kiến trúc luồng dữ liệu (pipeline diagram)
-- [ ] Chạy thực nghiệm hàng loạt, xuất kết quả `.xlsx`
-- [ ] Biên soạn báo cáo khoa học và slide thuyết trình
+1. **LSB, PVD, DCT không sống sót qua nén JPEG**, kể cả ở chất lượng rất cao (q=95), kể cả sau khi tăng độ mạnh mã hoá DCT lên gấp 10 lần. Đây là giới hạn của kiểu mã hoá 1 bit đơn lẻ không có mã sửa lỗi, không phải lỗi cài đặt. Ba thuật toán này chỉ đáng tin khi **file ảnh được giữ nguyên y hệt** (gửi trực tiếp, không qua nền tảng tự nén lại).
+2. **DWT-SVD cho NC thấp hơn DWT** trong bản cài đặt hiện tại, vì bước trích xuất chỉ khôi phục đường chéo ma trận giá trị kỳ dị (S), bỏ qua U và V. Muốn cải thiện cần nhúng/trích đầy đủ cả 3 thành phần SVD.
+3. **`core/pipeline.py`** (gộp AES→LSB→DWT) hiện **không được `app.py` sử dụng**, vì thứ tự bước sẽ khiến DWT phá huỷ dữ liệu LSB đã nhúng trước đó (DWT/IDWT là biến đổi số thực, thay đổi toàn bộ giá trị pixel chứ không chỉ bit thấp nhất). Nếu cần dùng module này, phải sửa lại thứ tự hoặc tách 2 bước riêng.
 
 ---
 
-## ⚠️ Lưu ý
+## Bảo mật
 
-- Đây là dự án mang tính **học thuật/nghiên cứu**, phục vụ mục đích tìm hiểu kỹ thuật giấu tin và thủy vân số.
-- Mật khẩu AES do người dùng nhập không được lưu trữ hay truyền đi đâu khác ngoài phiên làm việc hiện tại.
-- Sức chứa và độ bền của từng thuật toán phụ thuộc nhiều vào kích thước ảnh, định dạng và mức độ nén.
+- Mã hoá bằng AES-256-GCM (mã hoá **có xác thực** — nếu ảnh bị sửa đổi hoặc sai mật khẩu, hệ thống báo lỗi rõ ràng thay vì trả về dữ liệu rác).
+- Khóa dẫn xuất từ mật khẩu bằng PBKDF2-HMAC-SHA256 với 600.000 vòng lặp.
+- Mật khẩu không được lưu trữ hay gửi đi đâu ngoài phiên làm việc hiện tại của trình duyệt.
+- Nên dùng mật khẩu ≥ 12 ký tự (app có cảnh báo nếu ngắn hơn).
 
 ---
 
-## 📄 Giấy phép
+## Giấy phép
 
-Chưa xác định (đề xuất bổ sung file `LICENSE`, ví dụ MIT License, nếu dự định public/chia sẻ mã nguồn).
+Dự án học thuật — phục vụ mục đích nghiên cứu và giảng dạy tại Đại học Tôn Đức Thắng.
 
-## 👤 Tác giả
+## Tác giả
 
-[bonbidev](https://github.com/bonbidev)
+Tuấn Kiệt, Thanh Ngôn — [github.com/bonbidev](https://github.com/bonbidev)

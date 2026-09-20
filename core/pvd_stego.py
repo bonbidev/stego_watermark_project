@@ -42,10 +42,23 @@ class PVDStego:
 
     @staticmethod
     def _prepare_image(image: Image.Image) -> np.ndarray:
-        """Convert image to grayscale NumPy array."""
+        """
+        Return the single channel that PVD actually reads/writes.
+
+        For color images, only the Blue channel is used (same choice
+        as LSB) — this is what embed() modifies below, so extract()
+        pulling out the same channel is enough to recover the data.
+        Using `.convert("L")` here (the original approach) collapsed
+        every stego image to grayscale even though only one channel
+        was ever touched, permanently discarding the other two
+        channels' color information for no benefit.
+        """
 
         if not isinstance(image, Image.Image):
             raise ValueError("Input must be a PIL Image.")
+
+        if image.mode in ("RGB", "RGBA"):
+            return np.array(image.convert("RGB"), dtype=np.uint8)[:, :, 2].copy()
 
         return np.array(
             image.convert("L"),
@@ -188,13 +201,21 @@ class PVDStego:
         """
         Embed data using Pixel Value Differencing.
 
-        The first 32 bits store the payload length.
+        The first 32 bits store the payload length. For a color
+        image, only the Blue channel is modified — Red and Green are
+        copied through unchanged so the result stays a color image
+        instead of collapsing to grayscale.
         """
 
         if not isinstance(data, bytes):
             raise ValueError("Data must be bytes.")
 
-        image_array = self._prepare_image(image)
+        original_rgb: np.ndarray | None = None
+        if image.mode in ("RGB", "RGBA"):
+            original_rgb = np.array(image.convert("RGB"), dtype=np.uint8)
+            image_array = original_rgb[:, :, 2].copy()
+        else:
+            image_array = np.array(image.convert("L"), dtype=np.uint8)
 
         capacity = self._calculate_capacity(
             image_array
@@ -220,12 +241,13 @@ class PVDStego:
         height, width = image_array.shape
 
         for row in range(height):
+            if bit_index >= len(bits):
+                break
+
             for col in range(0, width - 1, 2):
 
                 if bit_index >= len(bits):
-                    return Image.fromarray(
-                        image_array
-                    )
+                    break
 
                 p1 = int(image_array[row, col])
                 p2 = int(image_array[row, col + 1])
@@ -277,6 +299,10 @@ class PVDStego:
 
                 image_array[row, col] = new_p1
                 image_array[row, col + 1] = new_p2
+
+        if original_rgb is not None:
+            original_rgb[:, :, 2] = image_array
+            return Image.fromarray(original_rgb, mode="RGB")
 
         return Image.fromarray(image_array)
 

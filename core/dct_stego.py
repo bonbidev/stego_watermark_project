@@ -48,10 +48,23 @@ class DCTStego:
 
     @staticmethod
     def _prepare_image(image: Image.Image) -> np.ndarray:
-        """Convert image to grayscale float32 array."""
+        """
+        Return the single channel DCT actually reads/writes, as
+        float32 for the DCT math.
+
+        For color images, only the Blue channel is used (same choice
+        as LSB/PVD) so embed() only needs to touch that one channel
+        and extract() only needs to read it back — `.convert("L")`
+        previously collapsed every stego image to grayscale even
+        though only one channel of data was ever written.
+        """
 
         if not isinstance(image, Image.Image):
             raise ValueError("Input must be a PIL Image.")
+
+        if image.mode in ("RGB", "RGBA"):
+            channel = np.array(image.convert("RGB"), dtype=np.uint8)[:, :, 2]
+            return channel.astype(np.float32)
 
         return np.array(
             image.convert("L"),
@@ -227,13 +240,20 @@ class DCTStego:
         """
         Embed data into DCT coefficients.
 
-        One bit is stored in each 8x8 block.
+        One bit is stored in each 8x8 block. For a color image, only
+        the Blue channel is modified — Red and Green pass through
+        unchanged so the result stays a color image.
         """
 
         if not isinstance(data, bytes):
             raise ValueError("Data must be bytes.")
 
-        image_array = self._prepare_image(image)
+        original_rgb: np.ndarray | None = None
+        if image.mode in ("RGB", "RGBA"):
+            original_rgb = np.array(image.convert("RGB"), dtype=np.uint8)
+            image_array = original_rgb[:, :, 2].astype(np.float32)
+        else:
+            image_array = np.array(image.convert("L"), dtype=np.float32)
 
         capacity = self._calculate_capacity(
             image_array
@@ -283,6 +303,10 @@ class DCTStego:
             0,
             255,
         ).astype(np.uint8)
+
+        if original_rgb is not None:
+            original_rgb[:, :, 2] = image_array
+            return Image.fromarray(original_rgb, mode="RGB")
 
         return Image.fromarray(
             image_array,
