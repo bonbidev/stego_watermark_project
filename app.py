@@ -112,6 +112,20 @@ def _inject_theme() -> None:
             border-radius: 12px;
             padding: 14px 18px;
         }}
+
+        /* Explicitly pin both the metric box's background AND its
+        text color together. Previously only the background was set,
+        so the text fell back to Streamlit's own theme-dependent
+        default color — if the person's browser/Streamlit theme is
+        set to dark (independent of this app's own dark-mode toggle
+        below), that default turns near-white, landing on this
+        always-light box and becoming unreadable ("white on white").
+        Pinning both colors here makes the light box readable
+        regardless of what theme is otherwise active. */
+        [data-testid="stMetric"] [data-testid="stMetricValue"],
+        [data-testid="stMetric"] [data-testid="stMetricLabel"] {{
+            color: #1F2937 !important;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -136,6 +150,8 @@ def _apply_dark_mode(dark: bool) -> None:
             background: #1E293B !important;
             border-color: #334155 !important;
         }
+        [data-testid="stMetric"] [data-testid="stMetricValue"],
+        [data-testid="stMetric"] [data-testid="stMetricLabel"],
         [data-testid="stMetricValue"], [data-testid="stMetricLabel"],
         h1, h2, h3, h4, p, span, label, li, .stMarkdown, .stCaption {
             color: #E5E7EB !important;
@@ -849,10 +865,6 @@ def steganography_tab() -> None:
             "stego_image.png",
             ":material/download: Tải ảnh đã giấu tin",
         )
-
-        st.session_state[
-            "stego_algorithm"
-        ] = algorithm
 
         _log_history({
             "kind": "stego",
