@@ -28,16 +28,39 @@ def _to_array(
     )
 
 
-def _validate_same_shape(
+def _align_shapes(
     image1: np.ndarray,
     image2: np.ndarray,
-) -> None:
-    """Check whether two images have the same shape."""
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Make two same-size images directly comparable.
 
-    if image1.shape != image2.shape:
+    Several algorithms in this project (PVD, DCT, DWT, DWT-SVD)
+    always output a grayscale (H, W) array, while the "original"
+    image callers pass in is usually RGB (H, W, 3). Comparing those
+    shapes used to raise a hard error even though the images are the
+    same size and perfectly comparable once put in the same color
+    space. If the height/width match but the channel dimension
+    differs, both arrays are converted to grayscale (ITU-R BT.601)
+    before comparison; a genuine height/width mismatch still raises.
+    """
+
+    if image1.shape == image2.shape:
+        return image1, image2
+
+    if image1.shape[:2] != image2.shape[:2]:
         raise ValueError(
-            "Images must have the same shape."
+            "Images must have the same width and height."
         )
+
+    def _to_gray(array: np.ndarray) -> np.ndarray:
+        if array.ndim == 2:
+            return array.astype(np.float64)
+
+        weights = np.array([0.299, 0.587, 0.114])
+        return array[..., :3].astype(np.float64) @ weights
+
+    return _to_gray(image1), _to_gray(image2)
 
 
 def mse(
@@ -58,7 +81,7 @@ def mse(
         processed
     ).astype(np.float64)
 
-    _validate_same_shape(
+    original_array, processed_array = _align_shapes(
         original_array,
         processed_array,
     )
@@ -113,9 +136,9 @@ def ssim(
         processed
     )
 
-    _validate_same_shape(
-        original_array,
-        processed_array,
+    original_array, processed_array = _align_shapes(
+        original_array.astype(np.float64),
+        processed_array.astype(np.float64),
     )
 
     if original_array.ndim == 3:
@@ -194,7 +217,7 @@ def normalized_correlation(
         extracted
     ).astype(np.float64)
 
-    _validate_same_shape(
+    original_array, extracted_array = _align_shapes(
         original_array,
         extracted_array,
     )

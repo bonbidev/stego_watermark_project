@@ -133,21 +133,51 @@ class PVDStego:
         p2: int,
         new_difference: int,
     ) -> tuple[int, int]:
-        """Adjust a pixel pair to reach the target difference."""
+        """
+        Adjust a pixel pair so that abs(p1' - p2') == new_difference,
+        while keeping both values within [0, 255].
+
+        NOTE: simply clamping p1/p2 independently to [0, 255] (the
+        original implementation) can silently change the resulting
+        difference whenever the naive adjustment pushes a value out
+        of range. That desynchronizes embed/extract and corrupts the
+        payload. Instead, if a value would overflow/underflow, the
+        *pair* is shifted together by the overflow amount, which
+        preserves (p1' - p2') exactly because both values move by the
+        same amount.
+        """
 
         current_difference = abs(p1 - p2)
-        difference = new_difference - current_difference
+        delta = new_difference - current_difference
 
         if p1 >= p2:
-            p1 += (difference + 1) // 2
-            p2 -= difference // 2
+            a = p1 + (delta + 1) // 2
+            b = p2 - delta // 2
         else:
-            p1 -= difference // 2
-            p2 += (difference + 1) // 2
+            a = p1 - delta // 2
+            b = p2 + (delta + 1) // 2
+
+        if a > 255:
+            shift = a - 255
+            a -= shift
+            b -= shift
+        elif a < 0:
+            shift = -a
+            a += shift
+            b += shift
+
+        if b > 255:
+            shift = b - 255
+            a -= shift
+            b -= shift
+        elif b < 0:
+            shift = -b
+            a += shift
+            b += shift
 
         return (
-            max(0, min(255, p1)),
-            max(0, min(255, p2)),
+            max(0, min(255, a)),
+            max(0, min(255, b)),
         )
 
     def embed(

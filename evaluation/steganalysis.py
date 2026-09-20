@@ -160,9 +160,15 @@ def chi_square_test(
 
     valid = expected > 0
 
+    # `valid` already has the same shape as `observed`/`expected`
+    # (2, 128), so it must be used as a single boolean mask —
+    # `observed[:, valid]` tries to consume 1 (for `:`) + 2 (for the
+    # 2D mask) = 3 index dimensions against a 2D array and raises
+    # "too many indices for array". `observed[valid]` applies the
+    # mask directly and is what was intended.
     statistic, p_value = chisquare(
-        f_obs=observed[:, valid].flatten(),
-        f_exp=expected[:, valid].flatten(),
+        f_obs=observed[valid],
+        f_exp=expected[valid],
     )
 
     return {

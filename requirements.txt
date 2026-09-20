@@ -1,7 +1,8 @@
 numpy
 opencv-python
 pywavelets
-pycryptodome
+cryptography
+scipy
+pandas
 scikit-image
-matplotlib
 streamlit
