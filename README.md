@@ -91,8 +91,6 @@ scikit-image     streamlit          plotly
 openpyxl
 ```
 
-> `requirements.txt` đã được rà soát khớp đúng với import thật trong code (không còn gói thừa `pycryptodome`/`matplotlib`, không còn thiếu `cryptography`/`scipy`/`pandas` như bản cũ).
-
 ---
 
 ## Chạy ứng dụng
